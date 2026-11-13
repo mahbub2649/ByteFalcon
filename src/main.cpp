@@ -1,4 +1,4 @@
-// main.cpp: diskscan entry point.
+// main.cpp: ByteFalcon entry point.
 //   GUI : serves the embedded web UI on 127.0.0.1 and opens it as an app window.
 //   CLI : --cli prints a report in the terminal (also handy for benchmarking).
 //
@@ -633,7 +633,7 @@ int runCli(const std::string &path, unsigned threads, bool showSmart, uint64_t d
 }
 
 void usage(const char *argv0) {
-    printf("diskscan %s - ultra fast disk usage scanner and cleanup tool\n\n"
+    printf("ByteFalcon %s - ultra fast disk usage scanner and cleanup tool\n\n"
            "  %s [PATH]                 open the GUI (and start scanning PATH)\n"
            "  %s --cli PATH [--smart] [--dupes MB]\n"
            "                            scan in the terminal; --smart lists cleanup suggestions,\n"
@@ -677,7 +677,7 @@ int main(int argc, char **argv) {
     }
     app.port = server.port();
     std::string url = "http://127.0.0.1:" + std::to_string(app.port) + "/#" + app.token();
-    printf("diskscan %s is running at\n  %s\nCtrl+C quits.\n", kVersion, url.c_str());
+    printf("ByteFalcon %s is running at\n  %s\nCtrl+C quits.\n", kVersion, url.c_str());
     fflush(stdout);
     if (!path.empty()) app.startScan(path, threads, false);
     if (!noBrowser) openWindow(url);
