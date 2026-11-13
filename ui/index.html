@@ -1,0 +1,1178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diskscan</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238b5cf6'/%3E%3Cstop offset='1' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='26' fill='none' stroke='url(%23g)' stroke-width='9' stroke-dasharray='120 60' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #070912;
+  --glass: rgba(255,255,255,.055);
+  --glass-2: rgba(255,255,255,.09);
+  --glass-hover: rgba(255,255,255,.075);
+  --stroke: rgba(255,255,255,.10);
+  --stroke-2: rgba(255,255,255,.18);
+  --text: #eef0ff;
+  --muted: rgba(226,230,255,.64);
+  --faint: rgba(226,230,255,.40);
+  --accent: #8b5cf6;
+  --accent-2: #22d3ee;
+  --grad: linear-gradient(135deg, #8b5cf6 0%, #6366f1 45%, #22d3ee 100%);
+  --ok: #34d399; --warn: #fbbf24; --bad: #fb7185; --info: #60a5fa;
+  --shadow: 0 18px 50px rgba(0,0,0,.45);
+  --hi: inset 0 1px 0 rgba(255,255,255,.10);
+  --blob-a: #7c3aed; --blob-b: #0891b2; --blob-c: #db2777;
+  --track: rgba(255,255,255,.07); --rest: rgba(255,255,255,.22);
+  --radius: 18px;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #eef1fb;
+    --glass: rgba(255,255,255,.55); --glass-2: rgba(255,255,255,.75); --glass-hover: rgba(255,255,255,.7);
+    --stroke: rgba(30,40,90,.10); --stroke-2: rgba(30,40,90,.18);
+    --text: #141833; --muted: rgba(20,24,51,.64); --faint: rgba(20,24,51,.42);
+    --shadow: 0 18px 50px rgba(40,50,120,.15); --hi: inset 0 1px 0 rgba(255,255,255,.8);
+    --blob-a: #a78bfa; --blob-b: #67e8f9; --blob-c: #f9a8d4;
+    --track: rgba(30,40,90,.08); --rest: rgba(30,40,90,.22);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--text); overflow-x: hidden;
+  font: 14px/1.5 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+.mono { font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace; font-size: .92em; }
+.muted { color: var(--muted); } .faint { color: var(--faint); }
+.hidden { display: none !important; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- animated background ---------- */
+.bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; }
+.blob { position: absolute; width: 46vmax; height: 46vmax; border-radius: 50%; filter: blur(90px); opacity: .42; will-change: transform; }
+.b1 { background: var(--blob-a); top: -14vmax; left: -10vmax; animation: drift1 26s ease-in-out infinite alternate; }
+.b2 { background: var(--blob-b); bottom: -18vmax; right: -12vmax; animation: drift2 32s ease-in-out infinite alternate; }
+.b3 { background: var(--blob-c); top: 30%; left: 45%; width: 30vmax; height: 30vmax; opacity: .22; animation: drift3 38s ease-in-out infinite alternate; }
+.grain { position: absolute; inset: 0; opacity: .035; background-image: radial-gradient(rgba(255,255,255,.9) 1px, transparent 1px); background-size: 3px 3px; }
+@keyframes drift1 { to { transform: translate(18vmax, 12vmax) scale(1.15); } }
+@keyframes drift2 { to { transform: translate(-16vmax, -10vmax) scale(1.1); } }
+@keyframes drift3 { to { transform: translate(-20vmax, 8vmax) scale(.9); } }
+@media (prefers-reduced-motion: reduce) { .blob { animation: none; } * { transition: none !important; } }
+
+/* ---------- glass ---------- */
+.glass {
+  background: linear-gradient(145deg, var(--glass-2), var(--glass));
+  border: 1px solid var(--stroke); border-radius: var(--radius);
+  box-shadow: var(--shadow), var(--hi);
+  backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: rgba(20,24,44,.92); }
+}
+
+/* ---------- layout ---------- */
+.app { min-height: 100%; display: flex; flex-direction: column; padding: 14px; gap: 14px; }
+.topbar { display: flex; align-items: center; gap: 14px; padding: 10px 14px; position: sticky; top: 14px; z-index: 20; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: -.01em; }
+.brand .logo { width: 28px; height: 28px; }
+.top-path { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.top-path .p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.view { flex: 1; min-height: 0; }
+.results { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 14px; align-items: start; }
+.sidebar { position: sticky; top: 86px; padding: 10px; display: flex; flex-direction: column; gap: 4px; }
+.tab { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid transparent; background: none; cursor: pointer; text-align: left; color: var(--muted); transition: background .15s, color .15s; }
+.tab:hover { background: var(--glass-hover); color: var(--text); }
+.tab.active { background: var(--glass-2); color: var(--text); border-color: var(--stroke); box-shadow: var(--hi); }
+.tab .ic { width: 18px; height: 18px; flex: none; }
+.tab .badge { margin-left: auto; font-size: 11px; padding: 1px 8px; border-radius: 99px; background: rgba(52,211,153,.16); color: var(--ok); }
+.side-foot { margin-top: 8px; padding: 10px 12px; border-top: 1px solid var(--stroke); font-size: 12px; color: var(--faint); }
+.pane { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding-bottom: 96px; }
+.pane-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pane-head h2 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
+.spacer { flex: 1; }
+@media (max-width: 900px) {
+  .results { grid-template-columns: 1fr; }
+  .sidebar { position: static; flex-direction: row; overflow-x: auto; }
+  .tab { white-space: nowrap; }
+  .side-foot { display: none; }
+}
+
+/* ---------- controls ---------- */
+.btn { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--stroke); background: var(--glass); cursor: pointer; transition: transform .12s, background .15s, border-color .15s, box-shadow .15s; white-space: nowrap; }
+.btn:hover { background: var(--glass-2); border-color: var(--stroke-2); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.primary { background: var(--grad); border-color: transparent; color: #fff; font-weight: 600; box-shadow: 0 8px 26px rgba(99,102,241,.45); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.danger { background: linear-gradient(135deg, #f43f5e, #e11d48); border-color: transparent; color: #fff; font-weight: 600; box-shadow: 0 8px 26px rgba(225,29,72,.35); }
+.btn.sm { height: 30px; padding: 0 12px; border-radius: 10px; font-size: 13px; }
+.btn .ic { width: 16px; height: 16px; }
+.icon-btn { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; border: 1px solid transparent; background: none; cursor: pointer; color: var(--faint); }
+.icon-btn:hover { background: var(--glass-2); border-color: var(--stroke); color: var(--text); }
+.icon-btn .ic { width: 15px; height: 15px; }
+.input { height: 46px; border-radius: 14px; border: 1px solid var(--stroke); background: rgba(0,0,0,.18); padding: 0 14px; outline: none; transition: border-color .15s, box-shadow .15s; min-width: 0; }
+.input:focus { border-color: rgba(139,92,246,.7); box-shadow: 0 0 0 4px rgba(139,92,246,.18); }
+select.input { height: 38px; padding: 0 10px; border-radius: 12px; }
+select.input option { background: #1a1d33; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--stroke); background: var(--glass); font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.chip:hover, .chip.on { color: var(--text); border-color: var(--stroke-2); background: var(--glass-2); }
+.chip.static { cursor: default; }
+.pill { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; }
+.pill.safe { background: rgba(52,211,153,.15); color: var(--ok); }
+.pill.review { background: rgba(251,191,36,.15); color: var(--warn); }
+.pill.info { background: rgba(96,165,250,.15); color: var(--info); }
+.switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: var(--muted); user-select: none; }
+.switch input { appearance: none; width: 36px; height: 20px; border-radius: 99px; background: rgba(255,255,255,.14); position: relative; cursor: pointer; transition: background .2s; margin: 0; }
+.switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.switch input:checked { background: var(--accent); }
+.switch input:checked::after { transform: translateX(16px); }
+.cb { appearance: none; width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--stroke-2); background: rgba(0,0,0,.15); cursor: pointer; display: grid; place-items: center; margin: 0; transition: background .15s, border-color .15s; }
+.cb:checked { background: var(--grad); border-color: transparent; }
+.cb:checked::after { content: ""; width: 9px; height: 5px; border: 2px solid #fff; border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px,-1px); }
+.cb:disabled { opacity: .3; cursor: not-allowed; }
+.ic { display: inline-block; line-height: 0; width: 16px; height: 16px; flex: none; }
+.chip .ic { width: 14px; height: 14px; }
+.ic svg { width: 100%; height: 100%; }
+
+/* ---------- home ---------- */
+.home { max-width: 1040px; width: 100%; margin: 4vh auto 0; display: flex; flex-direction: column; gap: 18px; }
+.hero { padding: 40px 40px 34px; position: relative; overflow: hidden; }
+.hero::after { content: ""; position: absolute; right: -80px; top: -80px; width: 300px; height: 300px; border-radius: 50%; background: radial-gradient(circle, rgba(139,92,246,.35), transparent 70%); pointer-events: none; }
+.hero h1 { margin: 0 0 8px; font-size: clamp(28px, 4vw, 42px); line-height: 1.1; letter-spacing: -.035em; }
+.hero h1 span { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero p { margin: 0 0 24px; color: var(--muted); max-width: 60ch; font-size: 15px; }
+.scanbox { display: flex; gap: 10px; }
+.scanbox .input { flex: 1; font-size: 15px; }
+.scanbox .btn { height: 46px; padding: 0 22px; font-size: 15px; border-radius: 14px; }
+.quick { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+.quick .gap { flex: 1; }
+.mounts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.mount { display: flex; align-items: center; gap: 16px; padding: 18px; cursor: pointer; text-align: left; transition: transform .18s, border-color .18s; }
+.mount:hover { transform: translateY(-2px); border-color: var(--stroke-2); }
+.mount-path { font-weight: 600; font-size: 15px; word-break: break-all; }
+.ring { width: 64px; height: 64px; flex: none; }
+.ring text { fill: var(--text); font-size: 15px; font-weight: 700; }
+.section-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); margin: 6px 4px -4px; }
+
+/* ---------- scanning ---------- */
+.scanning { max-width: 760px; width: 100%; margin: 8vh auto 0; padding: 40px; text-align: center; }
+.orb { width: 190px; height: 190px; margin: 0 auto 24px; position: relative; }
+.orb svg { position: absolute; inset: 0; animation: spin 1.6s linear infinite; }
+.orb .core { position: absolute; inset: 22px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle at 30% 30%, rgba(139,92,246,.35), rgba(34,211,238,.12) 60%, transparent 70%); }
+.orb .big { font-size: 28px; font-weight: 800; letter-spacing: -.03em; }
+.orb .lbl { font-size: 12px; color: var(--muted); margin-top: -4px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.statgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 8px 0 18px; }
+.stat { padding: 12px; border-radius: 14px; background: var(--glass); border: 1px solid var(--stroke); }
+.stat .v { font-size: 18px; font-weight: 700; }
+.stat .k { font-size: 12px; color: var(--muted); }
+.current { height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); margin-bottom: 18px; direction: rtl; text-align: center; }
+@media (max-width: 640px) { .statgrid { grid-template-columns: repeat(2, 1fr); } .hero { padding: 26px 20px; } .scanbox { flex-direction: column; } }
+
+/* ---------- overview ---------- */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.tile { padding: 18px; }
+.tile .k { color: var(--muted); font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+.tile .k .ic { width: 15px; height: 15px; }
+.tile .v { font-size: 26px; font-weight: 750; letter-spacing: -.03em; margin: 4px 0 2px; }
+.tile .s { color: var(--faint); font-size: 12.5px; }
+.tile.bad .v { color: var(--bad); }
+@media (max-width: 1100px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.card { padding: 18px 20px; }
+.card h3 { margin: 0 0 12px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.card h3 .ic { width: 17px; height: 17px; color: var(--accent-2); }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 1100px) { .grid2 { grid-template-columns: 1fr; } }
+.stack { height: 16px; border-radius: 99px; overflow: hidden; display: flex; background: var(--track); border: 1px solid var(--stroke); }
+.stack > div { height: 100%; transition: width .6s cubic-bezier(.2,.8,.2,1); }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.callout { margin-top: 16px; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 14px; background: linear-gradient(135deg, rgba(52,211,153,.14), rgba(34,211,238,.08)); border: 1px solid rgba(52,211,153,.25); }
+.callout .big { font-size: 20px; font-weight: 750; color: var(--ok); }
+.callout > .ic { width: 30px; height: 30px; color: var(--ok); }
+.hbar { display: grid; grid-template-columns: minmax(0, 1fr) 90px; gap: 4px 12px; align-items: center; padding: 7px 8px; border-radius: 10px; cursor: pointer; }
+.hbar:hover { background: var(--glass-hover); }
+.hbar .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+.hbar .nm .ic { width: 15px; height: 15px; flex: none; }
+.hbar .sz { text-align: right; color: var(--muted); }
+.hbar .track { grid-column: 1 / -1; height: 5px; border-radius: 99px; background: var(--track); overflow: hidden; }
+.hbar .track > div { height: 100%; border-radius: 99px; }
+.mini-cat { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 10px; }
+.mini-cat:hover { background: var(--glass-hover); }
+.mini-cat .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- explorer ---------- */
+.crumbs { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; min-width: 0; }
+.crumbs button { background: none; border: 0; padding: 4px 8px; border-radius: 8px; cursor: pointer; color: var(--muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumbs button:hover { background: var(--glass-2); color: var(--text); }
+.crumbs button:last-child { color: var(--text); font-weight: 600; }
+.crumbs .sep { color: var(--faint); }
+.treemap { position: relative; height: clamp(260px, 44vh, 480px); padding: 0; overflow: hidden; }
+.tm-cell { position: absolute; border-radius: 7px; overflow: hidden; cursor: pointer;
+  background: hsl(var(--h) 72% 58% / .30); border: 1px solid hsl(var(--h) 85% 72% / .40);
+  transition: filter .12s, box-shadow .12s; }
+.tm-cell:hover { filter: brightness(1.25); box-shadow: 0 0 0 1px hsl(var(--h) 90% 75% / .8) inset; z-index: 2; }
+.tm-cell.dir { background: hsl(var(--h) 60% 45% / .22); }
+.tm-cell.rest { background: rgba(255,255,255,.05); border-style: dashed; border-color: var(--stroke-2); cursor: default; }
+.tm-cell.sub { border-radius: 5px; background: hsl(var(--h) 72% 60% / .32); }
+.tm-label { position: absolute; left: 7px; right: 6px; top: 4px; font-size: 12px; line-height: 1.25; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.tm-label b { font-weight: 600; }
+.tm-label span { display: block; opacity: .75; font-size: 11px; }
+.tm-label em { font-style: normal; opacity: .75; font-size: 11px; margin-left: 6px; }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); }
+
+/* ---------- lists ---------- */
+.list { padding: 6px; overflow: hidden; }
+.row { display: grid; grid-template-columns: 28px 30px minmax(0, 1fr) minmax(70px, 160px) 86px 76px 92px 32px; gap: 10px; align-items: center; padding: 7px 8px; border-radius: 11px; min-height: 44px; }
+.row:hover { background: var(--glass-hover); }
+.row.head { min-height: 30px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); }
+.row.head:hover { background: none; }
+.row.flash { animation: flash 1.2s ease-out; }
+@keyframes flash { from { background: rgba(139,92,246,.35); } }
+.row.rest { display: block; text-align: center; color: var(--faint); font-size: 13px; min-height: 0; padding: 10px; }
+.row .kind { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: hsl(var(--h) 70% 55% / .16); color: hsl(var(--h) 85% 72%); }
+.row .kind .ic { width: 16px; height: 16px; }
+.name { min-width: 0; }
+.name .n1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name .n2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font-size: 12px; }
+.name.link { cursor: pointer; }
+.name.link:hover .n1 { color: var(--accent-2); }
+.tag { font-size: 10.5px; padding: 0 6px; border-radius: 5px; background: var(--glass-2); color: var(--muted); margin-left: 6px; vertical-align: 1px; }
+.barcell { height: 6px; border-radius: 99px; background: var(--track); overflow: hidden; }
+.barcell > div { height: 100%; border-radius: 99px; background: linear-gradient(90deg, hsl(var(--h) 80% 62%), hsl(calc(var(--h) + 40) 85% 66%)); }
+.size { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.meta, .meta2 { text-align: right; color: var(--faint); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 1000px) { .row { grid-template-columns: 28px 30px minmax(0, 1fr) 86px 32px; } .row .barcell, .row .meta, .row .meta2 { display: none; } }
+
+/* ---------- smart ---------- */
+.cat { padding: 0; overflow: hidden; }
+.cat-head { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; gap: 14px; align-items: center; padding: 16px 18px; cursor: pointer; }
+.cat-icon { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; background: hsl(var(--h) 70% 55% / .18); color: hsl(var(--h) 90% 72%); }
+.cat-icon .ic { width: 22px; height: 22px; }
+.cat-title { font-weight: 650; font-size: 15px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cat-desc { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.cat-size { font-size: 19px; font-weight: 750; letter-spacing: -.02em; text-align: right; }
+.cat-size small { display: block; font-size: 12px; font-weight: 400; color: var(--faint); letter-spacing: 0; }
+.cat-body { border-top: 1px solid var(--stroke); padding: 6px; }
+.chev { transition: transform .2s; color: var(--faint); width: 18px; height: 18px; }
+.cat.open .chev { transform: rotate(90deg); }
+.hint { display: flex; align-items: center; gap: 8px; margin: 10px 12px 12px; padding: 10px 12px; border-radius: 12px; background: rgba(0,0,0,.25); border: 1px solid var(--stroke); }
+.hint code { flex: 1; overflow-x: auto; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; color: var(--accent-2); }
+.note { color: var(--faint); font-size: 12.5px; padding: 8px 12px; }
+
+/* ---------- dupes ---------- */
+.progress { height: 8px; border-radius: 99px; background: var(--track); overflow: hidden; }
+.progress > div { height: 100%; background: var(--grad); border-radius: 99px; transition: width .3s; }
+.group-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px 6px; font-weight: 600; }
+.group-head .w { margin-left: auto; color: var(--warn); font-weight: 600; font-size: 13px; }
+
+/* ---------- types ---------- */
+.types-wrap { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 1000px) { .types-wrap { grid-template-columns: 1fr; } }
+.donut { width: 220px; height: 220px; display: block; margin: 6px auto 14px; }
+.donut text { fill: var(--text); }
+.kind-leg { display: flex; align-items: center; gap: 10px; padding: 6px 4px; font-size: 13.5px; }
+.kind-leg i { width: 11px; height: 11px; border-radius: 4px; flex: none; }
+.kind-leg .s { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---------- basket, modal, toast, tooltip ---------- */
+.basket { position: fixed; left: 50%; bottom: 18px; transform: translate(-50%, 140%); display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 18px; z-index: 40; transition: transform .35s cubic-bezier(.2,.9,.2,1.1); border-radius: 18px; max-width: calc(100vw - 32px); }
+.basket.show { transform: translate(-50%, 0); }
+.basket .cnt { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; background: var(--grad); font-weight: 700; color: #fff; font-size: 13px; flex: none; }
+.basket .txt { white-space: nowrap; }
+.basket .txt b { font-size: 16px; }
+.modal-bg { position: fixed; inset: 0; background: rgba(4,6,14,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: grid; place-items: center; z-index: 60; padding: 16px; animation: fade .2s; }
+@keyframes fade { from { opacity: 0; } }
+.modal { width: min(720px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; animation: pop .25s cubic-bezier(.2,.9,.2,1.2); }
+@keyframes pop { from { transform: scale(.96); opacity: 0; } }
+.modal-head { padding: 20px 22px 8px; }
+.modal-head h3 { margin: 0; font-size: 19px; }
+.modal-body { padding: 8px 22px; overflow: auto; }
+.modal-foot { padding: 14px 22px 20px; display: flex; gap: 10px; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
+.rlist { border: 1px solid var(--stroke); border-radius: 12px; max-height: 260px; overflow: auto; margin: 10px 0 14px; }
+.rrow { display: grid; grid-template-columns: minmax(0, 1fr) 84px 30px; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--stroke); font-size: 13px; }
+.rrow:last-child { border-bottom: 0; }
+.rrow .p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.rrow .z { text-align: right; color: var(--muted); }
+.rrow.err .p { color: var(--bad); direction: ltr; white-space: normal; }
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mode { display: flex; gap: 10px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--stroke); background: var(--glass); cursor: pointer; }
+.mode:has(input:checked) { border-color: rgba(139,92,246,.7); box-shadow: 0 0 0 3px rgba(139,92,246,.18); }
+.mode input { accent-color: var(--accent); margin-top: 3px; }
+.mode b { display: block; }
+.mode span { color: var(--muted); font-size: 12.5px; }
+@media (max-width: 560px) { .modes { grid-template-columns: 1fr; } }
+.result-big { text-align: center; padding: 18px 0 8px; }
+.result-big .v { font-size: 40px; font-weight: 800; letter-spacing: -.03em; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.toasts { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 80; }
+.toast { padding: 12px 16px; border-radius: 14px; max-width: 380px; animation: pop .25s; font-size: 13.5px; }
+.toast.bad { border-color: rgba(251,113,133,.5); }
+.toast.ok { border-color: rgba(52,211,153,.5); }
+.tip { position: fixed; pointer-events: none; z-index: 90; padding: 9px 12px; border-radius: 12px; font-size: 12.5px; max-width: 420px; opacity: 0; transition: opacity .1s; }
+.tip.show { opacity: 1; }
+.tip .t { font-weight: 600; word-break: break-all; }
+.loading { display: flex; align-items: center; gap: 12px; padding: 30px; color: var(--muted); justify-content: center; }
+.spinner { width: 20px; height: 20px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,.15); border-top-color: var(--accent-2); animation: spin .8s linear infinite; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="grain"></div></div>
+
+<div class="app">
+  <header class="topbar glass">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs><circle cx="32" cy="32" r="24" fill="none" stroke="url(#lg)" stroke-width="9" stroke-dasharray="110 50" stroke-linecap="round"/><circle cx="32" cy="32" r="7" fill="url(#lg)"/></svg>
+      Diskscan
+    </div>
+    <div class="top-path" id="topPath"></div>
+    <div id="topActions" class="hidden" style="display:flex;gap:8px">
+      <button class="btn sm" id="btnRescan" title="Scan the same folder again"></button>
+      <button class="btn sm" id="btnNew"></button>
+    </div>
+  </header>
+
+  <!-- home -->
+  <section class="view hidden" id="view-home">
+    <div class="home">
+      <div class="hero glass">
+        <h1>See what's eating your disk.<br><span>Reclaim it in seconds.</span></h1>
+        <p>Scans a million files in about a second, finds caches, leftovers and duplicates, and cleans them up safely. Nothing is deleted until you review it.</p>
+        <form class="scanbox" id="scanForm">
+          <input class="input mono" id="pathInput" spellcheck="false" autocomplete="off" aria-label="Folder to scan">
+          <button class="btn primary" type="submit" id="btnScan"></button>
+        </form>
+        <div class="quick" id="quick">
+          <span class="chip" data-path="~">Home folder</span>
+          <span class="chip" data-path="/">Entire disk</span>
+          <span class="chip" data-path="~/Downloads">Downloads</span>
+          <span class="gap"></span>
+          <label class="switch" title="Also scan other drives mounted inside this folder"><input type="checkbox" id="crossFs"> Cross drives</label>
+          <select class="input" id="threads" aria-label="Threads"></select>
+        </div>
+      </div>
+      <div class="section-label">Drives</div>
+      <div class="mounts" id="mounts"></div>
+    </div>
+  </section>
+
+  <!-- scanning -->
+  <section class="view hidden" id="view-scan">
+    <div class="scanning glass">
+      <div class="orb">
+        <svg viewBox="0 0 190 190" aria-hidden="true"><defs><linearGradient id="og" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs><circle cx="95" cy="95" r="86" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="6"/><circle cx="95" cy="95" r="86" fill="none" stroke="url(#og)" stroke-width="6" stroke-linecap="round" stroke-dasharray="140 400"/></svg>
+        <div class="core"><div><div class="big num" id="scanFiles">0</div><div class="lbl">files</div></div></div>
+      </div>
+      <div class="statgrid">
+        <div class="stat"><div class="v num" id="scanDirs">0</div><div class="k">folders</div></div>
+        <div class="stat"><div class="v num" id="scanBytes">0 B</div><div class="k">found</div></div>
+        <div class="stat"><div class="v num" id="scanRate">0</div><div class="k">entries / s</div></div>
+        <div class="stat"><div class="v num" id="scanTime">0.0 s</div><div class="k">elapsed</div></div>
+      </div>
+      <div class="current mono" id="scanCurrent">&nbsp;</div>
+      <button class="btn" id="btnCancel">Cancel</button>
+    </div>
+  </section>
+
+  <!-- results -->
+  <section class="view hidden results" id="view-results">
+    <nav class="sidebar glass" id="sidebar" aria-label="Sections"></nav>
+    <main id="panes">
+      <div class="pane" id="pane-overview"></div>
+      <div class="pane hidden" id="pane-explorer"></div>
+      <div class="pane hidden" id="pane-smart"></div>
+      <div class="pane hidden" id="pane-largest"></div>
+      <div class="pane hidden" id="pane-dupes"></div>
+      <div class="pane hidden" id="pane-old"></div>
+      <div class="pane hidden" id="pane-types"></div>
+    </main>
+  </section>
+</div>
+
+<div class="basket glass" id="basket" role="region" aria-label="Cleanup selection">
+  <div class="cnt" id="basketCount">0</div>
+  <div class="txt"><b id="basketSize">0 B</b> <span class="muted">selected</span></div>
+  <button class="btn sm" id="basketClear">Clear</button>
+  <button class="btn primary" id="basketReview"></button>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="tip glass" id="tip"></div>
+
+<script>
+'use strict';
+const TOKEN = location.hash.slice(1);
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+// ---------------------------------------------------------------- DOM helpers
+// Every piece of file-system data goes through textContent, never innerHTML.
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'text') el.textContent = v;
+    else if (k === 'style') el.style.cssText = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'checked' || k === 'disabled' || k === 'value') el[k] = v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(c));
+  return el;
+}
+function svgEl(tag, attrs, ...kids) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v);
+  for (const c of kids) el.append(c);
+  return el;
+}
+const P = 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+const ICONS = {
+  folder: `<svg viewBox="0 0 24 24" ${P}><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>`,
+  file: `<svg viewBox="0 0 24 24" ${P}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>`,
+  video: `<svg viewBox="0 0 24 24" ${P}><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg>`,
+  image: `<svg viewBox="0 0 24 24" ${P}><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>`,
+  audio: `<svg viewBox="0 0 24 24" ${P}><path d="M9 18V6l11-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>`,
+  archive: `<svg viewBox="0 0 24 24" ${P}><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/></svg>`,
+  code: `<svg viewBox="0 0 24 24" ${P}><path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/></svg>`,
+  doc: `<svg viewBox="0 0 24 24" ${P}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>`,
+  binary: `<svg viewBox="0 0 24 24" ${P}><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h.01M15 9h.01M9 15h6"/></svg>`,
+  data: `<svg viewBox="0 0 24 24" ${P}><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>`,
+  link: `<svg viewBox="0 0 24 24" ${P}><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>`,
+  overview: `<svg viewBox="0 0 24 24" ${P}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>`,
+  explorer: `<svg viewBox="0 0 24 24" ${P}><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18M12 12h9M3 9h9"/></svg>`,
+  sparkle: `<svg viewBox="0 0 24 24" ${P}><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>`,
+  largest: `<svg viewBox="0 0 24 24" ${P}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>`,
+  copy: `<svg viewBox="0 0 24 24" ${P}><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`,
+  clock: `<svg viewBox="0 0 24 24" ${P}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
+  pie: `<svg viewBox="0 0 24 24" ${P}><path d="M21 12A9 9 0 1 1 12 3v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg>`,
+  external: `<svg viewBox="0 0 24 24" ${P}><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>`,
+  trash: `<svg viewBox="0 0 24 24" ${P}><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>`,
+  refresh: `<svg viewBox="0 0 24 24" ${P}><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>`,
+  plus: `<svg viewBox="0 0 24 24" ${P}><path d="M12 5v14M5 12h14"/></svg>`,
+  search: `<svg viewBox="0 0 24 24" ${P}><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>`,
+  chev: `<svg viewBox="0 0 24 24" ${P}><path d="m9 6 6 6-6 6"/></svg>`,
+  up: `<svg viewBox="0 0 24 24" ${P}><path d="M12 19V5M5 12l7-7 7 7"/></svg>`,
+  x: `<svg viewBox="0 0 24 24" ${P}><path d="M6 6l12 12M18 6 6 18"/></svg>`,
+  box: `<svg viewBox="0 0 24 24" ${P}><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>`,
+  layers: `<svg viewBox="0 0 24 24" ${P}><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></svg>`,
+  download: `<svg viewBox="0 0 24 24" ${P}><path d="M12 4v11M7 10l5 5 5-5M4 20h16"/></svg>`,
+  phone: `<svg viewBox="0 0 24 24" ${P}><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>`,
+  globe: `<svg viewBox="0 0 24 24" ${P}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></svg>`,
+  python: `<svg viewBox="0 0 24 24" ${P}><path d="M12 3c-4 0-4 2-4 3v2h4M12 21c4 0 4-2 4-3v-2h-4M8 8H6c-2 0-3 1.5-3 4s1 4 3 4h2v-2c0-1 1-2 2-2h4c1 0 2-1 2-2V6"/></svg>`,
+  ship: `<svg viewBox="0 0 24 24" ${P}><path d="M3 15h18l-2 4H5zM6 15V9h12v6M9 9V6h6v3"/></svg>`,
+};
+function icon(name, cls = '') {
+  const s = document.createElement('span');
+  s.className = 'ic ' + cls;
+  s.innerHTML = ICONS[name] || ICONS.file;  // constant markup from the table above
+  return s;
+}
+
+// ---------------------------------------------------------------- formatting
+function fmtBytes(n) {
+  if (!n) return '0 B';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  let i = 0; while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
+  return (i === 0 ? n.toFixed(0) : n >= 100 ? n.toFixed(0) : n.toFixed(1)) + ' ' + u[i];
+}
+const fmtNum = n => Math.round(n).toLocaleString();
+const fmtPct = p => (p >= 0.995 ? 100 : p < 0.001 && p > 0 ? '<0.1' : (p * 100).toFixed(p < 0.1 ? 1 : 0)) + '%';
+function ago(sec) {
+  if (!sec) return '';
+  const d = Date.now() / 1000 - sec;
+  if (d < 3600) return Math.max(1, Math.round(d / 60)) + ' min ago';
+  if (d < 86400) return Math.round(d / 3600) + ' h ago';
+  if (d < 86400 * 45) return Math.round(d / 86400) + ' days ago';
+  if (d < 86400 * 365) return Math.round(d / 86400 / 30) + ' mo ago';
+  return (d / 86400 / 365).toFixed(1).replace('.0', '') + ' yr ago';
+}
+const joinPath = (a, b) => (a.endsWith('/') ? a : a + '/') + b;
+
+// ---------------------------------------------------------------- file kinds
+const KINDS = {
+  video: { label: 'Video', hue: 330, ext: 'mp4 mkv avi mov webm flv wmv m4v mpg mpeg 3gp ts' },
+  image: { label: 'Images', hue: 275, ext: 'jpg jpeg png gif webp svg bmp tif tiff heic raw cr2 nef psd ico avif xcf' },
+  audio: { label: 'Audio', hue: 190, ext: 'mp3 wav flac aac ogg m4a opus wma aiff mid' },
+  archive: { label: 'Archives & images', hue: 38, ext: 'zip rar 7z tar gz tgz xz bz2 zst iso img dmg deb rpm appimage jar apk aab whl snap run msi exe' },
+  code: { label: 'Code & text', hue: 145, ext: 'js mjs cjs ts jsx tsx py c cc cpp h hpp rs go java kt rb php cs swift sh json yml yaml toml xml html css scss md sql lua dart vue map lock txt ini cfg conf' },
+  doc: { label: 'Documents', hue: 212, ext: 'pdf doc docx xls xlsx ppt pptx odt ods odp csv rtf epub' },
+  binary: { label: 'Binaries & libraries', hue: 0, ext: 'so a o node dll bin class pyc wasm dylib ko' },
+  data: { label: 'Databases & VM disks', hue: 255, ext: 'db sqlite sqlite3 ldb log pack idx qcow2 vdi vmdk raw' },
+  other: { label: 'Other', hue: 222, ext: '' },
+};
+const EXT2KIND = {};
+for (const [k, v] of Object.entries(KINDS)) for (const e of v.ext.split(' ')) if (e) EXT2KIND[e] = k;
+function extOf(name) { const i = name.lastIndexOf('.'); return i > 0 && name.length - i <= 9 ? name.slice(i + 1).toLowerCase() : ''; }
+const kindOfExt = e => EXT2KIND[e] || 'other';
+const kindOf = it => it.type === 'd' ? 'folder' : it.type === 'l' ? 'link' : kindOfExt(extOf(it.name));
+function hueOf(it, fallback = 255) { const k = kindOf(it); return k === 'folder' ? fallback : k === 'link' ? 200 : KINDS[k].hue; }
+function kindIcon(it) {
+  const k = kindOf(it);
+  return h('div', { class: 'kind', style: `--h:${hueOf(it, 262)}` }, icon(k === 'other' ? 'file' : k));
+}
+
+// ---------------------------------------------------------------- API
+async function api(path, body) {
+  const r = await fetch('/api/' + path, {
+    method: body ? 'POST' : 'GET',
+    headers: { 'X-Token': TOKEN, 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+// ---------------------------------------------------------------- state
+const state = { info: null, summary: null, tab: 'overview', dirId: null, smart: null, dupes: null, basket: new Map(), poll: null, largestKind: 'all' };
+const TABS = [
+  ['overview', 'Overview', 'overview'], ['explorer', 'Explorer', 'explorer'], ['smart', 'Smart Clean', 'sparkle'],
+  ['largest', 'Largest files', 'largest'], ['dupes', 'Duplicates', 'copy'], ['old', 'Old files', 'clock'], ['types', 'File types', 'pie'],
+];
+
+function toast(msg, kind = '') {
+  const t = h('div', { class: 'toast glass ' + kind, text: msg });
+  $('#toasts').append(t);
+  setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = 0; setTimeout(() => t.remove(), 300); }, 4200);
+}
+function loading(text) { return h('div', { class: 'loading' }, h('div', { class: 'spinner' }), text); }
+function show(view) {
+  for (const v of ['home', 'scan', 'results']) $('#view-' + v).classList.toggle('hidden', v !== view);
+  $('#topActions').classList.toggle('hidden', view !== 'results');
+  if (view !== 'results') $('#topPath').replaceChildren();
+}
+
+// ---------------------------------------------------------------- home
+function ring(pct) {
+  const r = 26, c = 2 * Math.PI * r, col = pct > 0.9 ? '#fb7185' : pct > 0.75 ? '#fbbf24' : '#34d399';
+  return svgEl('svg', { class: 'ring', viewBox: '0 0 64 64' },
+    svgEl('circle', { cx: 32, cy: 32, r, fill: 'none', style: 'stroke:var(--track)', 'stroke-width': 7 }),
+    svgEl('circle', { cx: 32, cy: 32, r, fill: 'none', stroke: col, 'stroke-width': 7, 'stroke-linecap': 'round',
+      'stroke-dasharray': `${c * pct} ${c}`, transform: 'rotate(-90 32 32)' }),
+    svgEl('text', { x: 32, y: 37, 'text-anchor': 'middle' }, document.createTextNode(Math.round(pct * 100) + '%')));
+}
+function renderHome() {
+  show('home');
+  const info = state.info;
+  $('#pathInput').value = info.home;
+  const sel = $('#threads');
+  if (!sel.options.length) {
+    sel.append(h('option', { value: 0, text: `Auto (${info.threads} threads)` }));
+    for (const n of [1, 2, 4, 8, 16, 32, 64]) sel.append(h('option', { value: n, text: `${n} thread${n > 1 ? 's' : ''}` }));
+  }
+  $('#mounts').replaceChildren(...info.mounts.map(m => {
+    const pct = (m.total - m.free) / m.total;
+    return h('button', { class: 'mount glass', onclick: () => startScan(m.path) }, ring(pct),
+      h('div', { style: 'min-width:0' },
+        h('div', { class: 'mount-path', text: m.path }),
+        h('div', { class: m.free / m.total < 0.1 ? '' : 'muted', style: m.free / m.total < 0.1 ? 'color:var(--bad)' : '', text: `${fmtBytes(m.free)} free of ${fmtBytes(m.total)}` }),
+        h('div', { class: 'faint mono', style: 'font-size:12px', text: `${m.device} · ${m.fs}` })));
+  }));
+  setTimeout(() => $('#pathInput').focus(), 50);
+}
+
+async function startScan(path) {
+  path = (path || $('#pathInput').value).trim() || state.info.home;
+  if (path === '~' || path.startsWith('~/')) path = state.info.home + path.slice(1);
+  try {
+    await api('scan', { path, threads: +$('#threads').value || 0, crossFs: $('#crossFs').checked });
+  } catch (e) { toast(e.message, 'bad'); return; }
+  state.basket.clear(); updateBasket();
+  state.smart = null; state.dupes = null; state.lastPath = path;
+  show('scan');
+  pollScan();
+}
+async function pollScan() {
+  clearTimeout(state.poll);
+  let p;
+  try { p = await api('progress'); } catch (e) { state.poll = setTimeout(pollScan, 500); return; }
+  $('#scanFiles').textContent = fmtNum(p.files || 0);
+  $('#scanDirs').textContent = fmtNum(p.dirs || 0);
+  $('#scanBytes').textContent = fmtBytes(p.bytes || 0);
+  $('#scanRate').textContent = fmtNum(((p.files || 0) + (p.dirs || 0)) / Math.max(p.seconds || 0, 0.05));
+  $('#scanTime').textContent = (p.seconds || 0).toFixed(1) + ' s';
+  if (p.current) $('#scanCurrent').textContent = p.current;
+  if (p.running) { state.poll = setTimeout(pollScan, 150); return; }
+  if (p.error) { toast(p.error, 'bad'); renderHome(); return; }
+  await loadResults();
+}
+
+// ---------------------------------------------------------------- results shell
+async function loadResults() {
+  state.summary = await api('summary');
+  state.dirId = state.summary.rootId;
+  show('results');
+  renderTop();
+  renderSidebar();
+  switchTab(state.tab);
+  loadSmart();
+}
+function renderTop() {
+  const s = state.summary;
+  $('#topPath').replaceChildren(
+    h('span', { class: 'chip static' }, icon('folder'), h('span', { class: 'mono', text: s.display })),
+    h('span', { class: 'p', text: `${fmtBytes(s.size)} · ${fmtNum(s.files)} files · ${fmtNum(s.dirs)} folders · ${s.seconds.toFixed(2)} s` }));
+}
+function renderSidebar() {
+  const nav = $('#sidebar');
+  nav.replaceChildren(...TABS.map(([id, label, ic]) =>
+    h('button', { class: 'tab' + (id === state.tab ? ' active' : ''), 'data-tab': id, onclick: () => switchTab(id) },
+      icon(ic), label, id === 'smart' ? h('span', { class: 'badge hidden', id: 'smartBadge' }) : null)),
+    h('div', { class: 'side-foot', text: `${state.summary.threads} threads · ${fmtNum((state.summary.files + state.summary.dirs) / Math.max(state.summary.seconds, 0.001))} entries/s` }));
+  updateSmartBadge();
+}
+function switchTab(tab) {
+  state.tab = tab;
+  for (const b of $$('.tab')) b.classList.toggle('active', b.dataset.tab === tab);
+  for (const p of $$('.pane')) p.classList.toggle('hidden', p.id !== 'pane-' + tab);
+  ({ overview: renderOverview, explorer: () => renderExplorer(state.dirId), smart: renderSmart, largest: renderLargest,
+     dupes: renderDupes, old: renderOld, types: renderTypes })[tab]();
+}
+
+// ---------------------------------------------------------------- overview
+function tile(ic, k, v, s, cls = '') {
+  return h('div', { class: 'tile glass ' + cls }, h('div', { class: 'k' }, icon(ic), k), h('div', { class: 'v num', text: v }), h('div', { class: 's', text: s }));
+}
+function renderOverview() {
+  const s = state.summary, pane = $('#pane-overview');
+  const rate = (s.files + s.dirs) / Math.max(s.seconds, 0.001);
+  const top = s.top.filter(t => t.size > 0), max = Math.max(1, ...top.map(t => t.size));
+  pane.replaceChildren(
+    h('div', { class: 'tiles' },
+      tile('folder', 'Scanned', fmtBytes(s.size), `${fmtBytes(s.bytes)} apparent size`),
+      tile('layers', 'Files', fmtNum(s.files), `${fmtNum(s.dirs)} folders${s.errors ? ` · ${fmtNum(s.errors)} unreadable` : ''}`),
+      tile('largest', 'Scan speed', fmtNum(rate) + '/s', `${s.seconds.toFixed(2)} s with ${s.threads} threads`),
+      tile('pie', 'Disk free', fmtBytes(s.diskFree), `of ${fmtBytes(s.diskTotal)} (${fmtPct(s.diskFree / s.diskTotal)})`, s.diskFree / s.diskTotal < 0.1 ? 'bad' : '')),
+    h('div', { class: 'card glass', id: 'diskCard' }),
+    h('div', { class: 'grid2' },
+      h('div', { class: 'card glass' }, h('h3', {}, icon('folder'), 'Biggest items here'),
+        ...top.map((t, i) => h('div', { class: 'hbar', onclick: () => t.type === 'd' ? openDir(t.id) : null, title: t.name },
+          h('div', { class: 'nm' }, icon(t.type === 'd' ? 'folder' : 'file'), h('span', { text: t.name })),
+          h('div', { class: 'sz num', text: fmtBytes(t.size) }),
+          h('div', { class: 'track' }, h('div', { style: `width:${(t.size / max) * 100}%;background:linear-gradient(90deg,hsl(${(i * 37 + 250) % 360} 80% 62%),hsl(${(i * 37 + 290) % 360} 85% 66%))` }))))),
+      h('div', { class: 'card glass', id: 'smartCard' })));
+  renderDiskCard();
+  renderSmartPreview();
+}
+function renderDiskCard() {
+  const el = $('#diskCard'); if (!el) return;
+  const s = state.summary, used = s.diskTotal - s.diskFree;
+  const here = Math.min(s.size, used), other = Math.max(0, used - here);
+  const safe = state.smart ? Math.min(state.smart.safeTotal, here) : 0;
+  const w = n => (n / s.diskTotal * 100).toFixed(2) + '%';
+  el.replaceChildren(
+    h('h3', {}, icon('pie'), 'Disk usage'),
+    h('div', { class: 'stack' },
+      h('div', { style: `width:${w(here - safe)};background:linear-gradient(90deg,#8b5cf6,#6366f1)`, title: 'This folder' }),
+      h('div', { style: `width:${w(safe)};background:repeating-linear-gradient(45deg,#34d399 0 6px,#10b981 6px 12px)`, title: 'Safe to reclaim' }),
+      h('div', { style: `width:${w(other)};background:var(--rest)`, title: 'Rest of the disk' })),
+    h('div', { class: 'legend' },
+      h('span', {}, h('i', { style: 'background:#7c6cf6' }), `This folder ${fmtBytes(here)}`),
+      h('span', {}, h('i', { style: 'background:#34d399' }), `Safe to reclaim ${state.smart ? fmtBytes(safe) : '…'}`),
+      h('span', {}, h('i', { style: 'background:var(--rest)' }), `Rest of disk ${fmtBytes(other)}`),
+      h('span', {}, h('i', { style: 'background:var(--track);border:1px solid var(--stroke)' }), `Free ${fmtBytes(s.diskFree)}`)),
+    state.smart && state.smart.safeTotal > 0 ? h('div', { class: 'callout' },
+      icon('sparkle'),
+      h('div', { style: 'flex:1' }, h('div', { class: 'big num', text: fmtBytes(state.smart.safeTotal) }),
+        h('div', { class: 'muted', text: 'can be freed safely: caches and leftovers that apps rebuild on their own.' })),
+      h('button', { class: 'btn primary', onclick: () => switchTab('smart') }, 'Review')) : null);
+}
+function renderSmartPreview() {
+  const el = $('#smartCard'); if (!el) return;
+  if (!state.smart) { el.replaceChildren(h('h3', {}, icon('sparkle'), 'Smart suggestions'), loading('Analyzing…')); return; }
+  const cats = state.smart.categories.filter(c => c.safety !== 'info').slice(0, 6);
+  el.replaceChildren(h('h3', {}, icon('sparkle'), 'Smart suggestions'),
+    ...(cats.length ? cats.map(c => h('div', { class: 'mini-cat' },
+      h('span', { class: 'pill ' + c.safety, text: c.safety }), h('span', { class: 't', text: c.title }),
+      h('b', { class: 'num', text: fmtBytes(c.total) }),
+      h('button', { class: 'btn sm', onclick: () => addCategory(c) }, icon('plus'), 'Select'))) : [h('div', { class: 'note', text: 'Nothing obvious to clean here.' })]),
+    h('div', { style: 'margin-top:10px' }, h('button', { class: 'btn sm', onclick: () => switchTab('smart') }, 'See all suggestions')));
+}
+
+// ---------------------------------------------------------------- shared list rows
+function itemFor(it, opt) {
+  const path = it.path || (it.dir ? joinPath(it.dir, it.name) : opt.base ? joinPath(opt.base, it.name) : it.name);
+  return { id: it.id, name: it.name, path, size: it.size, type: it.type, safe: !!opt.safe };
+}
+function row(it, opt) {
+  const item = itemFor(it, opt);
+  const cb = h('input', { type: 'checkbox', class: 'cb', 'data-id': it.id, checked: state.basket.has(it.id), disabled: !!it.mount,
+    title: it.mount ? 'Another drive is mounted here' : 'Select for cleanup', 'aria-label': 'Select ' + it.name,
+    onchange: e => toggleItem(item, e.target.checked, e.target, opt.group) });
+  const name = h('div', { class: 'name' },
+    h('div', { class: 'n1', title: item.path }, it.name,
+      it.mount ? h('span', { class: 'tag', text: 'drive' }) : null,
+      it.hardlink ? h('span', { class: 'tag', text: 'hard link' }) : null,
+      it.unreadable ? h('span', { class: 'tag', text: 'no access' }) : null),
+    opt.showDir ? h('div', { class: 'n2 mono', text: opt.showPath ? item.path : (it.dir || '') }) : null);
+  if (it.type === 'd' && opt.onDir) { name.classList.add('link'); name.addEventListener('click', () => opt.onDir(it.id)); }
+  const pct = opt.parentSize ? it.size / opt.parentSize : null;
+  return h('div', { class: 'row', 'data-row': it.id },
+    cb, kindIcon(it), name,
+    h('div', { class: 'barcell', style: `--h:${hueOf(it, 262)}` }, h('div', { style: `width:${Math.max(1, it.size / (opt.max || 1) * 100)}%` })),
+    h('div', { class: 'size', text: fmtBytes(it.size) }),
+    h('div', { class: 'meta', text: pct != null ? fmtPct(pct) : (it.type === 'd' ? fmtNum(it.files || 0) + ' files' : extOf(it.name).toUpperCase()) }),
+    h('div', { class: 'meta2', text: ago(it.mtime) }),
+    h('button', { class: 'icon-btn', title: 'Show in file manager', 'aria-label': 'Show in file manager', onclick: () => api('open', { id: it.id }).catch(e => toast(e.message, 'bad')) }, icon('external')));
+}
+function list(items, opt = {}) {
+  const max = Math.max(1, ...items.map(i => i.size));
+  const el = h('div', { class: 'list glass' },
+    h('div', { class: 'row head' }, h('span'), h('span'), h('span', { text: 'Name' }), h('span', { text: '' }),
+      h('span', { style: 'text-align:right', text: 'Size' }), h('span', { style: 'text-align:right', text: opt.parentSize ? 'Share' : 'Type' }),
+      h('span', { style: 'text-align:right', text: 'Modified' }), h('span')),
+    ...items.map(it => row(it, { ...opt, max })));
+  if (!items.length) el.append(h('div', { class: 'row rest', text: opt.empty || 'Nothing here.' }));
+  if (opt.restCount) el.append(h('div', { class: 'row rest', text: `+ ${fmtNum(opt.restCount)} more items · ${fmtBytes(opt.restSize)}` }));
+  return el;
+}
+
+// ---------------------------------------------------------------- basket
+function toggleItem(item, on, cb, group) {
+  if (on && group) {
+    const others = group.filter(id => id !== item.id);
+    if (others.every(id => state.basket.has(id))) { cb.checked = false; toast('Keep at least one copy of every duplicate.', 'bad'); return; }
+  }
+  if (on) state.basket.set(item.id, item); else state.basket.delete(item.id);
+  updateBasket();
+}
+function addItems(items) { for (const it of items) if (!it.mount) state.basket.set(it.id, it); updateBasket(); }
+function addCategory(c) {
+  addItems(c.items.map(it => itemFor(it, { safe: c.safety === 'safe' })));
+  toast(`Selected ${c.items.length} item${c.items.length > 1 ? 's' : ''} from "${c.title}"`, 'ok');
+}
+function updateBasket() {
+  let total = 0; for (const it of state.basket.values()) total += it.size;
+  $('#basketCount').textContent = state.basket.size > 999 ? '999+' : state.basket.size;
+  $('#basketSize').textContent = fmtBytes(total);
+  $('#basket').classList.toggle('show', state.basket.size > 0);
+  for (const cb of $$('input.cb[data-id]')) cb.checked = state.basket.has(+cb.dataset.id);
+}
+
+function openReview() {
+  const items = [...state.basket.values()].sort((a, b) => b.size - a.size);
+  const total = items.reduce((a, b) => a + b.size, 0);
+  const allSafe = items.every(i => i.safe);
+  let mode = allSafe ? 'delete' : 'trash';
+  const bg = h('div', { class: 'modal-bg', onclick: e => { if (e.target === bg) close(); } });
+  const close = () => { bg.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  const listEl = h('div', { class: 'rlist' });
+  const fill = () => listEl.replaceChildren(...[...state.basket.values()].sort((a, b) => b.size - a.size).slice(0, 400).map(it =>
+    h('div', { class: 'rrow' }, h('span', { class: 'p mono', title: it.path, text: it.path }), h('span', { class: 'z num', text: fmtBytes(it.size) }),
+      h('button', { class: 'icon-btn', title: 'Remove from selection', onclick: () => { state.basket.delete(it.id); updateBasket(); if (!state.basket.size) close(); else { fill(); summary(); } } }, icon('x')))));
+  const sumEl = h('p', { class: 'muted', style: 'margin:4px 0 0' });
+  const summary = () => { const t = [...state.basket.values()].reduce((a, b) => a + b.size, 0); sumEl.textContent = `${fmtNum(state.basket.size)} items · ${fmtBytes(t)}`; };
+  const confirm = h('label', { class: 'switch', style: 'margin-right:auto' }, h('input', { type: 'checkbox', id: 'ackDelete' }), "I understand permanent deletion can't be undone");
+  const go = h('button', { class: 'btn', onclick: () => run() });
+  const modeBox = (val, title, desc) => h('label', { class: 'mode' },
+    h('input', { type: 'radio', name: 'mode', value: val, checked: mode === val, onchange: () => { mode = val; sync(); } }),
+    h('div', {}, h('b', { text: title }), h('span', { text: desc })));
+  const sync = () => {
+    go.className = 'btn ' + (mode === 'delete' ? 'danger' : 'primary');
+    go.replaceChildren(icon('trash'), mode === 'delete' ? 'Delete permanently' : 'Move to Trash');
+    confirm.classList.toggle('hidden', mode !== 'delete' || allSafe);
+  };
+  fill(); summary();
+  const modal = h('div', { class: 'modal glass', role: 'dialog', 'aria-modal': 'true' },
+    h('div', { class: 'modal-head' }, h('h3', { text: 'Review cleanup' }), sumEl),
+    h('div', { class: 'modal-body' }, listEl,
+      h('div', { class: 'modes' },
+        modeBox('trash', 'Move to Trash', 'Recoverable from your file manager. Frees space only after you empty the Trash.'),
+        modeBox('delete', 'Delete permanently', allSafe ? 'Frees space right away. Everything selected is cache or leftovers that get rebuilt.' : 'Frees space right away. Cannot be undone.'))),
+    h('div', { class: 'modal-foot' }, confirm, h('button', { class: 'btn', onclick: close }, 'Cancel'), go));
+  bg.append(modal);
+  document.body.append(bg);
+  sync();
+
+  async function run() {
+    if (mode === 'delete' && !allSafe && !$('#ackDelete').checked) { toast('Tick the confirmation first.', 'bad'); return; }
+    const ids = [...state.basket.keys()];
+    modal.replaceChildren(h('div', { class: 'modal-head' }, h('h3', { text: mode === 'delete' ? 'Deleting…' : 'Moving to Trash…' })),
+      h('div', { class: 'modal-body' }, loading(`${fmtNum(ids.length)} items`)));
+    let res;
+    try { res = await api('clean', { ids, mode }); } catch (e) { toast(e.message, 'bad'); close(); return; }
+    const errs = res.results.filter(r => !r.ok);
+    for (const r of res.results) if (r.ok) state.basket.delete(r.id);
+    updateBasket();
+    modal.replaceChildren(
+      h('div', { class: 'modal-head' }, h('h3', { text: errs.length ? 'Done, with some problems' : 'All clean' })),
+      h('div', { class: 'modal-body' },
+        h('div', { class: 'result-big' },
+          h('div', { class: 'v num', text: fmtBytes(mode === 'delete' ? res.freed : res.trashed) }),
+          h('div', { class: 'muted', text: mode === 'delete' ? `freed · ${fmtBytes(res.diskFree)} now free on this drive` : 'moved to Trash · empty the Trash to free the space' })),
+        errs.length ? h('div', { class: 'rlist' }, ...errs.slice(0, 200).map(r =>
+          h('div', { class: 'rrow err' }, h('span', { class: 'p' }, h('span', { class: 'mono', text: r.path || ('#' + r.id) }), h('br'), h('span', { text: r.error })), h('span'), h('span')))) : null),
+      h('div', { class: 'modal-foot' }, h('button', { class: 'btn primary', onclick: close }, 'Done')));
+    await refreshAfterClean();
+  }
+}
+async function refreshAfterClean() {
+  state.summary = await api('summary');
+  renderTop();
+  state.smart = null;
+  if (state.dupes && state.dupes.state === 2) state.dupes = await api('dupes');
+  switchTab(state.tab);
+  loadSmart();
+}
+
+// ---------------------------------------------------------------- explorer + treemap
+function openDir(id) { state.dirId = id; switchTab('explorer'); }
+async function renderExplorer(id) {
+  const pane = $('#pane-explorer');
+  if (!pane.firstChild) pane.append(loading('Loading…'));
+  let node, tree;
+  try { [node, tree] = await Promise.all([api('node?id=' + id), api('tree?id=' + id)]); } catch (e) { toast(e.message, 'bad'); return; }
+  state.dirId = node.node.id;
+  state.tree = tree;
+  const crumbs = h('div', { class: 'crumbs' });
+  node.crumbs.forEach((c, i) => {
+    if (i) crumbs.append(h('span', { class: 'sep', text: '/' }));
+    crumbs.append(h('button', { text: c.name, title: c.name, onclick: () => renderExplorer(c.id) }));
+  });
+  const parent = node.crumbs.length > 1 ? node.crumbs[node.crumbs.length - 2].id : null;
+  pane.replaceChildren(
+    h('div', { class: 'pane-head' }, crumbs, h('div', { class: 'spacer' }),
+      h('span', { class: 'muted num', text: `${fmtBytes(node.node.size)} · ${fmtNum(node.node.files || 0)} files` }),
+      h('button', { class: 'btn sm', disabled: parent == null, onclick: () => renderExplorer(parent), title: 'Up one level (Backspace)' }, icon('up'), 'Up'),
+      h('button', { class: 'btn sm', onclick: () => api('open', { id: node.node.id }) }, icon('external'), 'Open')),
+    h('div', { class: 'treemap glass', id: 'treemap' }),
+    list(node.children, { parentSize: node.node.size, base: node.node.path, onDir: cid => renderExplorer(cid), restCount: node.restCount, restSize: node.restSize, empty: 'This folder is empty.' }));
+  drawTreemap();
+  // Redraw whenever the treemap's own box changes size (window resize, sidebar collapse, ...).
+  let raf = 0, lastW = 0, lastH = 0;
+  new ResizeObserver(([e]) => {
+    const { width, height } = e.contentRect;
+    if (Math.abs(width - lastW) < 1 && Math.abs(height - lastH) < 1) return;
+    lastW = width; lastH = height;
+    cancelAnimationFrame(raf); raf = requestAnimationFrame(drawTreemap);
+  }).observe($('#treemap'));
+}
+
+// Squarified treemap (Bruls, Huizing & van Wijk): lays out rows of rectangles along the
+// shorter side, adding items to a row while that keeps aspect ratios closer to square.
+function squarify(areas, x, y, w, hgt) {
+  const out = [];
+  let i = 0;
+  const worst = (sum, min, max, side) => Math.max(side * side * max / (sum * sum), (sum * sum) / (side * side * min));
+  while (i < areas.length) {
+    const side = Math.min(w, hgt);
+    if (side <= 0) { while (i++ < areas.length) out.push({ x, y, w: 0, h: 0 }); break; }
+    let sum = areas[i], min = areas[i], max = areas[i], j = i + 1;
+    while (j < areas.length) {
+      const a = areas[j], s2 = sum + a, mn = Math.min(min, a), mx = Math.max(max, a);
+      if (worst(s2, mn, mx, side) > worst(sum, min, max, side)) break;
+      sum = s2; min = mn; max = mx; j++;
+    }
+    if (w >= hgt) {
+      const cw = sum / hgt; let cy = y;
+      for (let k = i; k < j; k++) { const ch = areas[k] / cw; out.push({ x, y: cy, w: cw, h: ch }); cy += ch; }
+      x += cw; w -= cw;
+    } else {
+      const rh = sum / w; let cx = x;
+      for (let k = i; k < j; k++) { const cwid = areas[k] / rh; out.push({ x: cx, y, w: cwid, h: rh }); cx += cwid; }
+      y += rh; hgt -= rh;
+    }
+    i = j;
+  }
+  return out;
+}
+function layoutItems(items, x, y, w, hgt) {
+  const total = items.reduce((a, b) => a + b.size, 0) || 1;
+  return squarify(items.map(i => i.size / total * w * hgt), x, y, w, hgt);
+}
+function treemapItems(node) {
+  const kids = (node.children || []).filter(c => c.size > 0);
+  if (node.restSize > 0) kids.push({ rest: true, size: node.restSize, name: `${fmtNum(node.restCount)} smaller items`, type: 'o' });
+  return kids;
+}
+function drawTreemap() {
+  const el = $('#treemap'); if (!el || !state.tree) return;
+  el.replaceChildren();
+  const W = el.clientWidth, H = el.clientHeight, items = treemapItems(state.tree);
+  if (!items.length) { el.append(h('div', { class: 'empty', text: 'Empty folder' })); return; }
+  const parentSize = state.tree.size || 1;
+  layoutItems(items, 0, 0, W, H).forEach((r, i) => {
+    const it = items[i], hue = it.type === 'd' ? (i * 47 + 255) % 360 : hueOf(it);
+    const nested = it.type === 'd' && it.children && it.children.length > 0 && r.w > 70 && r.h > 54;
+    const cell = tmCell(it, r, hue, parentSize, 3, '', nested);
+    el.append(cell);
+    if (nested) {
+      const sub = treemapItems(it), iw = r.w - 9, ih = r.h - 27;
+      layoutItems(sub, 3, 21, iw, ih).forEach((sr, k) => {
+        const s = sub[k];
+        if (sr.w < 3 || sr.h < 3) return;
+        cell.append(tmCell(s, sr, s.type === 'd' ? hue : hueOf(s), parentSize, 2, ' sub'));
+      });
+    }
+  });
+}
+function tmCell(it, r, hue, parentSize, gap, extra, nested = false) {
+  const cls = 'tm-cell' + extra + (it.type === 'd' ? ' dir' : '') + (it.rest ? ' rest' : '');
+  const cell = h('div', { class: cls, style: `left:${r.x + gap / 2}px;top:${r.y + gap / 2}px;width:${Math.max(0, r.w - gap)}px;height:${Math.max(0, r.h - gap)}px;--h:${hue}` });
+  // A folder showing its children gets a one-line header so it doesn't overlap them.
+  if (nested) cell.append(h('div', { class: 'tm-label' }, h('b', { text: it.name }), h('em', { text: fmtBytes(it.size) })));
+  else if (r.w > 46 && r.h > 20) cell.append(h('div', { class: 'tm-label' }, h('b', { text: it.name }), r.h > 38 ? h('span', { text: fmtBytes(it.size) }) : null));
+  if (!it.rest) {
+    cell.addEventListener('click', e => {
+      e.stopPropagation();
+      if (it.type === 'd') renderExplorer(it.id);
+      else { const rowEl = $(`[data-row="${it.id}"]`); if (rowEl) { rowEl.scrollIntoView({ block: 'center', behavior: 'smooth' }); rowEl.classList.remove('flash'); void rowEl.offsetWidth; rowEl.classList.add('flash'); } }
+    });
+  }
+  cell.addEventListener('mousemove', e => { e.stopPropagation(); tip(e, it.name, `${fmtBytes(it.size)} · ${fmtPct(it.size / parentSize)} of this folder${it.type === 'd' ? ` · ${fmtNum(it.files || 0)} files` : ''}`); });
+  cell.addEventListener('mouseleave', hideTip);
+  return cell;
+}
+function tip(e, title, sub) {
+  const t = $('#tip');
+  t.replaceChildren(h('div', { class: 't', text: title }), h('div', { class: 'muted', text: sub }));
+  t.classList.add('show');
+  const x = Math.min(e.clientX + 16, innerWidth - t.offsetWidth - 10), y = Math.min(e.clientY + 18, innerHeight - t.offsetHeight - 10);
+  t.style.left = x + 'px'; t.style.top = y + 'px';
+}
+function hideTip() { $('#tip').classList.remove('show'); }
+
+// ---------------------------------------------------------------- smart clean
+async function loadSmart() {
+  try { state.smart = await api('smart'); } catch (e) { return; }
+  updateSmartBadge();
+  if (state.tab === 'overview') { renderDiskCard(); renderSmartPreview(); }
+  if (state.tab === 'smart') renderSmart();
+}
+function updateSmartBadge() {
+  const b = $('#smartBadge'); if (!b) return;
+  b.classList.toggle('hidden', !state.smart || !state.smart.safeTotal);
+  if (state.smart) b.textContent = fmtBytes(state.smart.safeTotal);
+}
+const CAT_STYLE = {
+  trash: ['trash', 0], cache: ['layers', 265], appcache: ['globe', 200], pkgcache: ['box', 35], buildcache: ['code', 145],
+  partial: ['download', 190], node_modules: ['box', 120], venv: ['python', 210], installers: ['archive', 38],
+  olddownloads: ['clock', 300], logs: ['doc', 15], android: ['phone', 140], docker: ['ship', 205], journal: ['doc', 230],
+  apt: ['archive', 25], snap: ['box', 20],
+};
+function renderSmart() {
+  const pane = $('#pane-smart');
+  if (!state.smart) { pane.replaceChildren(loading('Analyzing your files…')); return; }
+  const sm = state.smart, safeCats = sm.categories.filter(c => c.safety === 'safe');
+  pane.replaceChildren(
+    h('div', { class: 'pane-head' }, h('h2', { text: 'Smart Clean' }), h('span', { class: 'muted', text: `${fmtBytes(sm.safeTotal)} safe to free` }), h('div', { class: 'spacer' }),
+      safeCats.length ? h('button', { class: 'btn primary', onclick: () => { safeCats.forEach(addCategory); } }, icon('sparkle'), 'Select everything safe') : null),
+    ...(sm.categories.length ? sm.categories.map(catCard) : [h('div', { class: 'card glass note', text: 'Nothing obvious to clean in this folder.' })]));
+}
+function catCard(c) {
+  const [ic, hue] = CAT_STYLE[c.id] || ['sparkle', 260];
+  const card = h('div', { class: 'cat glass' });
+  const body = h('div', { class: 'cat-body hidden' });
+  const head = h('div', { class: 'cat-head', onclick: e => {
+      if (e.target.closest('button')) return;
+      card.classList.toggle('open'); body.classList.toggle('hidden');
+      if (!body.firstChild) fillBody();
+    } },
+    h('div', { class: 'cat-icon', style: `--h:${hue}` }, icon(ic)),
+    h('div', { style: 'min-width:0' },
+      h('div', { class: 'cat-title' }, c.title, h('span', { class: 'pill ' + c.safety, text: c.safety === 'info' ? 'manual' : c.safety })),
+      h('div', { class: 'cat-desc', text: c.description })),
+    h('div', { class: 'cat-size num' }, fmtBytes(c.total), h('small', { text: `${fmtNum(c.count)} item${c.count === 1 ? '' : 's'}` })),
+    h('div', { style: 'display:flex;align-items:center;gap:6px' },
+      c.safety !== 'info' ? h('button', { class: 'btn sm', onclick: () => addCategory(c) }, icon('plus'), 'Select all') : null,
+      icon('chev', 'chev')));
+  function fillBody() {
+    if (c.hint) body.append(h('div', { class: 'hint' }, h('code', { text: c.hint }),
+      h('button', { class: 'btn sm', onclick: () => navigator.clipboard.writeText(c.hint).then(() => toast('Command copied', 'ok')) }, icon('copy'), 'Copy')));
+    if (c.safety !== 'info') body.append(list(c.items, { safe: c.safety === 'safe', showDir: true, showPath: true }));
+    else body.append(h('div', { class: 'note', text: 'Run the command above in a terminal. Deleting these files directly can break the program that owns them.' }));
+    if (c.count > c.items.length) body.append(h('div', { class: 'note', text: `Showing the largest ${c.items.length} of ${fmtNum(c.count)} items.` }));
+  }
+  card.append(head, body);
+  return card;
+}
+
+// ---------------------------------------------------------------- largest / old
+async function renderLargest() {
+  const pane = $('#pane-largest');
+  pane.replaceChildren(loading('Finding the largest files…'));
+  let d;
+  try { d = await api('largest?limit=500'); } catch (e) { toast(e.message, 'bad'); return; }
+  const counts = {};
+  for (const it of d.items) { const k = kindOf(it); counts[k] = (counts[k] || 0) + 1; }
+  const body = h('div');
+  const draw = () => {
+    const items = state.largestKind === 'all' ? d.items : d.items.filter(it => kindOf(it) === state.largestKind);
+    body.replaceChildren(list(items, { showDir: true, empty: 'No files of this type among the largest 500.' }));
+    for (const c of $$('.chip', chips)) c.classList.toggle('on', c.dataset.k === state.largestKind);
+  };
+  const chips = h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' },
+    h('span', { class: 'chip', 'data-k': 'all', onclick: () => { state.largestKind = 'all'; draw(); } }, 'All'),
+    ...Object.entries(KINDS).filter(([k]) => counts[k]).map(([k, v]) =>
+      h('span', { class: 'chip', 'data-k': k, onclick: () => { state.largestKind = k; draw(); } }, icon(k === 'other' ? 'file' : k), `${v.label} ${counts[k]}`)));
+  pane.replaceChildren(h('div', { class: 'pane-head' }, h('h2', { text: 'Largest files' }), h('span', { class: 'muted', text: `top ${d.items.length} of ${fmtNum(d.count)} files` })), chips, body);
+  draw();
+}
+async function renderOld() {
+  const pane = $('#pane-old');
+  const days = state.oldDays || 365, min = state.oldMin || 50e6;
+  const sel = (opts, cur, set) => h('select', { class: 'input', onchange: e => { set(+e.target.value); renderOld(); } },
+    ...opts.map(([v, t]) => h('option', { value: v, text: t, selected: v === cur })));
+  const head = h('div', { class: 'pane-head' }, h('h2', { text: 'Old files' }), h('div', { class: 'spacer' }),
+    h('span', { class: 'muted', text: 'not modified for' }),
+    sel([[90, '3 months'], [180, '6 months'], [365, '1 year'], [730, '2 years'], [1095, '3 years']], days, v => state.oldDays = v),
+    h('span', { class: 'muted', text: 'and larger than' }),
+    sel([[1e6, '1 MB'], [10e6, '10 MB'], [50e6, '50 MB'], [100e6, '100 MB'], [1e9, '1 GB']], min, v => state.oldMin = v));
+  pane.replaceChildren(head, loading('Searching…'));
+  let d;
+  try { d = await api(`old?days=${days}&min=${min}&limit=500`); } catch (e) { toast(e.message, 'bad'); return; }
+  pane.replaceChildren(head,
+    h('div', { class: 'muted', text: `${fmtNum(d.count)} files, ${fmtBytes(d.total)} in total${d.count > d.items.length ? ` · showing the largest ${d.items.length}` : ''}` }),
+    list(d.items, { showDir: true, empty: 'No files match. Try a shorter age or smaller size.' }));
+}
+
+// ---------------------------------------------------------------- duplicates
+async function renderDupes() {
+  const pane = $('#pane-dupes');
+  if (!state.dupes) { try { state.dupes = await api('dupes'); } catch (e) { state.dupes = { state: 0 }; } }
+  const d = state.dupes;
+  const minSel = h('select', { class: 'input', id: 'dupeMin' },
+    ...[[1e5, '100 KB'], [1e6, '1 MB'], [10e6, '10 MB'], [50e6, '50 MB'], [100e6, '100 MB']].map(([v, t]) => h('option', { value: v, text: t, selected: v === (state.dupeMin || 1e6) })));
+  const head = h('div', { class: 'pane-head' }, h('h2', { text: 'Duplicates' }), h('div', { class: 'spacer' }),
+    h('span', { class: 'muted', text: 'files at least' }), minSel,
+    h('button', { class: 'btn primary', disabled: d.state === 1, onclick: startDupes }, icon('search'), d.state === 2 ? 'Search again' : 'Find duplicates'));
+  if (d.state === 0) {
+    pane.replaceChildren(head, h('div', { class: 'card glass' },
+      h('h3', {}, icon('copy'), 'Find identical files'),
+      h('p', { class: 'muted', style: 'margin:0', text: 'Files are compared by size first, then by their first and last 16 KB, and only then by a full 128-bit content hash. Most files are ruled out without being read in full.' })));
+    return;
+  }
+  if (d.state === 1) {
+    const pct = d.bytesTotal ? d.bytesDone / d.bytesTotal : d.filesTotal ? d.filesDone / d.filesTotal : 0;
+    pane.replaceChildren(head, h('div', { class: 'card glass' },
+      h('h3', {}, h('div', { class: 'spinner' }), d.stage || 'Working…'),
+      h('div', { class: 'progress' }, h('div', { style: `width:${(pct * 100).toFixed(1)}%` })),
+      h('p', { class: 'muted num', style: 'margin:10px 0 0', text: d.bytesTotal ? `${fmtBytes(d.bytesDone)} of ${fmtBytes(d.bytesTotal)} hashed` : `${fmtNum(d.filesDone)} of ${fmtNum(d.filesTotal)} files` })));
+    return;
+  }
+  const groups = d.groups || [];
+  const keep = which => {
+    for (const g of groups) {
+      const sorted = [...g.files].sort((a, b) => which === 'newest' ? b.mtime - a.mtime : a.mtime - b.mtime);
+      sorted.slice(1).forEach(f => state.basket.set(f.id, itemFor(f, {})));
+      state.basket.delete(sorted[0].id);
+    }
+    updateBasket();
+    toast(`Selected the extra copies; kept the ${which} file in each group.`, 'ok');
+  };
+  pane.replaceChildren(head,
+    h('div', { class: 'card glass', style: 'display:flex;align-items:center;gap:14px;flex-wrap:wrap' },
+      h('div', { style: 'flex:1' }, h('div', { class: 'num', style: 'font-size:22px;font-weight:750', text: fmtBytes(d.wastedTotal || 0) }),
+        h('div', { class: 'muted', text: `wasted by ${fmtNum(d.groupCount || 0)} groups of identical files` })),
+      groups.length ? h('button', { class: 'btn sm', onclick: () => keep('newest') }, 'Select extras, keep newest') : null,
+      groups.length ? h('button', { class: 'btn sm', onclick: () => keep('oldest') }, 'Select extras, keep oldest') : null),
+    ...groups.map(g => {
+      const ids = g.files.map(f => f.id);
+      return h('div', { class: 'list glass' },
+        h('div', { class: 'group-head' }, icon('copy'), `${g.files.length} copies × ${fmtBytes(g.bytes)}`, h('span', { class: 'w', text: `${fmtBytes(g.wasted)} wasted` })),
+        ...g.files.map(f => row(f, { showDir: true, group: ids, max: g.bytes })));
+    }));
+}
+async function startDupes() {
+  state.dupeMin = +$('#dupeMin').value;
+  try { await api('dupes/start', { minSize: state.dupeMin }); } catch (e) { toast(e.message, 'bad'); return; }
+  pollDupes();
+}
+async function pollDupes() {
+  try { state.dupes = await api('dupes'); } catch (e) { return; }
+  if (state.tab === 'dupes') renderDupes();
+  if (state.dupes.state === 1) setTimeout(pollDupes, 400);
+  else if (state.dupes.state === 2 && state.tab !== 'dupes') toast(`Duplicate search finished: ${fmtBytes(state.dupes.wastedTotal)} wasted.`, 'ok');
+}
+
+// ---------------------------------------------------------------- types
+async function renderTypes() {
+  const pane = $('#pane-types');
+  pane.replaceChildren(loading('Counting file types…'));
+  let d;
+  try { d = await api('types'); } catch (e) { toast(e.message, 'bad'); return; }
+  const byKind = {};
+  let total = 0;
+  for (const t of d.types) { const k = kindOfExt(t.ext); byKind[k] = (byKind[k] || 0) + t.size; total += t.size; }
+  const kinds = Object.entries(byKind).sort((a, b) => b[1] - a[1]);
+  const r = 80, C = 2 * Math.PI * r;
+  let off = 0;
+  const donut = svgEl('svg', { class: 'donut', viewBox: '0 0 220 220' },
+    svgEl('circle', { cx: 110, cy: 110, r, fill: 'none', style: 'stroke:var(--track)', 'stroke-width': 26 }),
+    ...kinds.map(([k, s]) => {
+      const len = s / (total || 1) * C;
+      const c = svgEl('circle', { cx: 110, cy: 110, r, fill: 'none', stroke: `hsl(${KINDS[k].hue} 80% 62%)`, 'stroke-width': 26,
+        'stroke-dasharray': `${Math.max(0, len - 2)} ${C}`, 'stroke-dashoffset': -off, transform: 'rotate(-90 110 110)' });
+      off += len;
+      return c;
+    }),
+    svgEl('text', { x: 110, y: 106, 'text-anchor': 'middle', 'font-size': 22, 'font-weight': 750 }, document.createTextNode(fmtBytes(total))),
+    svgEl('text', { x: 110, y: 128, 'text-anchor': 'middle', 'font-size': 12, opacity: .6 }, document.createTextNode('in files')));
+  const max = Math.max(1, ...d.types.map(t => t.size));
+  pane.replaceChildren(h('div', { class: 'pane-head' }, h('h2', { text: 'File types' })),
+    h('div', { class: 'types-wrap' },
+      h('div', { class: 'card glass' }, donut, ...kinds.map(([k, s]) => h('div', { class: 'kind-leg' },
+        h('i', { style: `background:hsl(${KINDS[k].hue} 80% 62%)` }), KINDS[k].label, h('span', { class: 's', text: `${fmtBytes(s)} · ${fmtPct(s / (total || 1))}` })))),
+      h('div', { class: 'list glass' },
+        h('div', { class: 'row head', style: 'grid-template-columns:30px minmax(0,1fr) minmax(70px,200px) 90px 90px' }, h('span'), h('span', { text: 'Extension' }), h('span'), h('span', { style: 'text-align:right', text: 'Files' }), h('span', { style: 'text-align:right', text: 'Size' })),
+        ...d.types.map(t => {
+          const k = kindOfExt(t.ext);
+          return h('div', { class: 'row', style: 'grid-template-columns:30px minmax(0,1fr) minmax(70px,200px) 90px 90px' },
+            h('div', { class: 'kind', style: `--h:${KINDS[k].hue}` }, icon(k === 'other' ? 'file' : k)),
+            h('div', { class: 'name' }, h('div', { class: 'n1 mono', text: t.ext ? '.' + t.ext : '(no extension)' }), h('div', { class: 'n2', text: KINDS[k].label })),
+            h('div', { class: 'barcell', style: `--h:${KINDS[k].hue}` }, h('div', { style: `width:${Math.max(1, t.size / max * 100)}%` })),
+            h('div', { class: 'meta num', style: 'display:block', text: fmtNum(t.count) }),
+            h('div', { class: 'size', text: fmtBytes(t.size) }));
+        }))));
+}
+
+// ---------------------------------------------------------------- wiring
+function initStatic() {
+  $('#btnScan').append(icon('search'), 'Scan');
+  $('#btnRescan').append(icon('refresh'), 'Rescan');
+  $('#btnNew').append(icon('plus'), 'New scan');
+  $('#basketReview').append(icon('trash'), 'Review & clean');
+  $('#scanForm').addEventListener('submit', e => { e.preventDefault(); startScan(); });
+  for (const c of $$('#quick .chip')) c.addEventListener('click', () => startScan(c.dataset.path));
+  $('#btnCancel').addEventListener('click', () => api('cancel', {}).catch(() => {}));
+  $('#btnNew').addEventListener('click', renderHome);
+  $('#btnRescan').addEventListener('click', () => startScan(state.summary.root));
+  $('#basketClear').addEventListener('click', () => { state.basket.clear(); updateBasket(); });
+  $('#basketReview').addEventListener('click', openReview);
+  let rt;
+  addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (state.tab === 'explorer') drawTreemap(); }, 120); });
+  addEventListener('keydown', e => {
+    if (e.key === 'Backspace' && state.tab === 'explorer' && !$('.modal-bg') && !/input|select|textarea/i.test(document.activeElement.tagName)) {
+      const b = $$('#pane-explorer .crumbs button'); if (b.length > 1) { e.preventDefault(); b[b.length - 2].click(); }
+    }
+  });
+  setInterval(() => api('ping').catch(() => {}), 20000);
+  addEventListener('pagehide', () => fetch('/api/bye', { method: 'POST', keepalive: true, headers: { 'X-Token': TOKEN } }));
+}
+
+async function boot() {
+  if (!TOKEN) { document.body.replaceChildren(h('div', { class: 'loading', text: 'Missing access token. Start diskscan from a terminal and use the link it prints.' })); return; }
+  initStatic();
+  const qtab = new URLSearchParams(location.search).get('tab');  // deep link: /?tab=smart#token
+  if (TABS.some(t => t[0] === qtab)) state.tab = qtab;
+  try { state.info = await api('info'); } catch (e) { document.body.replaceChildren(h('div', { class: 'loading', text: 'Cannot reach diskscan: ' + e.message })); return; }
+  const p = await api('progress');
+  if (p.running) { show('scan'); pollScan(); }
+  else if (p.ready) await loadResults();
+  else renderHome();
+}
+boot();
+</script>
+</body>
+</html>
